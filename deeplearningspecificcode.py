@@ -99,6 +99,8 @@ class CNN(nn.Module):
         self.output_layer = nn.Linear(size_after_conv, n_output)
         # and for predict_proba we need a softmax function:
         self.softmax = nn.Softmax(dim=1)
+
+        self.to("cuda" if torch.cuda.is_available() else "cpu")
         
 
     def conv_only(self, x):
@@ -146,7 +148,7 @@ class CNN(nn.Module):
                 acc = sum(torch.argmax(output,1) == labels)/labels.shape[0]
                 # log it
                 self.log["training_loss"] += [(epoch, loss.item())]
-                self.log["training_accuracy"] += [(epoch, acc)]
+                self.log["training_accuracy"] += [(epoch, acc.item())]
             # validation set
             self.eval()
             for data, labels in dataloader_dictionary["validation_dataloader"]:
@@ -157,7 +159,7 @@ class CNN(nn.Module):
                 acc = sum(torch.argmax(output,1) == labels)/labels.shape[0]
                 # log it
                 self.log["validation_loss"] += [(epoch, loss.item())]
-                self.log["validation_accuracy"] += [(epoch, acc)]
+                self.log["validation_accuracy"] += [(epoch, acc.item())]
             if verbose:
                 epoch_trloss = np.mean([i[1] for i in self.log['training_loss'] if i[0]==epoch])
                 epoch_tracc  = np.mean([i[1] for i in self.log['training_accuracy'] if i[0]==epoch])
@@ -167,14 +169,18 @@ class CNN(nn.Module):
         self.eval()
 
     def predict(self, x):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         if type(x) != torch.Tensor:
             x = torch.tensor(x, dtype=torch.float32)
+        x = x.to(device)
         y = self.forward(x)
         predictions = torch.argmax(y, dim=1)
         return predictions.cpu().detach().numpy()
 
     def predict_proba(self, x):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         if type(x) != torch.Tensor:
             x = torch.tensor(x, dtype=torch.float32)
+        x = x.to(device)
         y = self.forward(x)
         return y.cpu().detach().numpy()
