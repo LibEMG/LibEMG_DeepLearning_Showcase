@@ -5,7 +5,7 @@
 from libemg.datasets import OneSubjectMyoDataset
 from libemg.data_handler import OfflineDataHandler
 from libemg.filtering import Filter
-from libemg.emg_classifier import EMGClassifier
+from libemg.emg_predictor import EMGClassifier
 from libemg.offline_metrics import OfflineMetrics
 from deeplearningspecificcode import fix_random_seed, make_data_loader, CNN
 
@@ -15,15 +15,14 @@ def main():
     # make our results repeatable
     fix_random_seed(seed_value=0, use_cuda=True)
     # download the dataset from the internet
-    dataset = OneSubjectMyoDataset(save_dir='dataset/',
-                          redownload=False)
-    odh = dataset.prepare_data(format=OfflineDataHandler)
+    dataset = OneSubjectMyoDataset()
+    data = dataset.prepare_data()
 
     # split the dataset into a train, validation, and test set
     # this dataset has a "sets" metadata flag, so lets split 
     # train/test using that.
-    not_test_data = odh.isolate_data("sets",[0,1,2,3,4])
-    test_data = odh.isolate_data("sets",[5])
+    not_test_data = data['Train']
+    test_data = data['Test']
     # lets further split up training and validation based on reps
     train_data = not_test_data.isolate_data("sets",[0,1,2,3])
     valid_data = not_test_data.isolate_data("sets",[4])
@@ -55,7 +54,7 @@ def main():
     dataloader_dictionary = {"training_dataloader": train_dataloader,
                              "validation_dataloader": valid_dataloader}
     # We need to tell the libEMG EMGClassifier that we are using a custom model
-    model = CNN(n_output   = np.unique(np.vstack(odh.classes[:])).shape[0],
+    model = CNN(n_output   = np.unique(np.vstack(not_test_data.classes[:])).shape[0],
                 n_channels = train_windows.shape[1],
                 n_samples  = train_windows.shape[2],
                 n_filters  = 64)
@@ -64,13 +63,14 @@ def main():
     dl_dictionary = {"learning_rate": 1e-4,
                      "num_epochs": 50,
                      "verbose": True}
+    model.fit(dataloader_dictionary, **dl_dictionary)
     #--------------------------------------#
     #          Back to library code        #
     #--------------------------------------#
     # Now that we've made the custom classifier object, libEMG knows how to 
     # interpret it when passed in the dataloader_dictionary. Everything happens behind the scenes.
-    classifier = EMGClassifier()
-    classifier.fit(model, dataloader_dictionary=dataloader_dictionary, parameters=dl_dictionary)
+    classifier = EMGClassifier(None)
+    classifier.model = model
     # get the classifier's predictions on the test set
     preds = classifier.run(test_windows)
     om = OfflineMetrics()
@@ -88,7 +88,7 @@ def main():
     feature_dictionary = {}
     feature_dictionary["training_windows"] = train_windows
     feature_dictionary["train_labels"]     = train_metadata["classes"]
-    classifier = EMGClassifier()
+    classifier = EMGClassifier(None)
     classifier.add_majority_vote(3)
     classifier.add_rejection(0.9)
     classifier.add_velocity(train_windows, train_metadata["classes"])
@@ -96,11 +96,12 @@ def main():
                      "num_epochs": 50,
                      "verbose": False}
     # reset the model weights
-    model = CNN(n_output   = np.unique(np.vstack(odh.classes[:])).shape[0],
+    model = CNN(n_output   = np.unique(np.vstack(not_test_data.classes[:])).shape[0],
                 n_channels = train_windows.shape[1],
                 n_samples  = train_windows.shape[2],
                 n_filters  = 64)
-    classifier.fit(model, feature_dictionary=feature_dictionary, dataloader_dictionary=dataloader_dictionary, parameters=dl_dictionary)
+    model.fit(dataloader_dictionary, **dl_dictionary)
+    classifier.model = model
      # get the classifier's predictions on the test set
     preds = classifier.run(test_windows)
     om = OfflineMetrics()
